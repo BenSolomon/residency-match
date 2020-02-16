@@ -8,7 +8,12 @@ specialties <- levels(factor(df$simpleSpecialty))
 ui <- navbarPage("Match Data",
   header = 
     div(
-      tags$head(includeHTML("google-analytics.js")), 
+      tags$head(
+        includeHTML("google-analytics.js"),
+        includeCSS("closableFooterCSS.css")
+      ), 
+      includeHTML("closableFooterHTML.html"),
+
       style="margin-left:2%; margin-right:2%;",
       titlePanel("Match Data"),
       div(style="border:solid; background-color:#f5f7fa; border-radius: 25px",
@@ -58,7 +63,8 @@ ui <- navbarPage("Match Data",
         column(12, withSpinner(plotOutput("ratePlot")) )
       ),
       fluidRow(br())
-    )
+    ),
+    includeHTML("closableFooterJS.html")
   )
 )
 
