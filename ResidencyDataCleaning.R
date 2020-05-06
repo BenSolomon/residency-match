@@ -1,21 +1,13 @@
-library(pdftools); library(dplyr); library(zoo); library(tidyr); library(stringr)
+library(pdftools); library(zoo); library(stringr); library(tidyverse)
+source("constants_functions.R")
 
-doc <- pdf_text("Program-Results-2015-2019.pdf")
+doc <- pdf_text("Program-Results_2016_2020.pdf")
 doc <- unlist(strsplit(doc, split = "\n"))
 doc <- data_frame(text = as.vector(doc))
 
 states <- data.frame("stateFull" = toupper(state.name), "State" = state.abb, stringsAsFactors = F)
 
-old.data <- read.csv("Program-Results-2013-2017v2.csv", stringsAsFactors = F)
-old.data <- old.data %>%
-  filter(Year == 2013 | Year == 2014) %>%
-  mutate(Stat = paste(Year, Stat, sep = "-")) %>%
-  select(Code, Stat, value) %>%
-  # group_by(Code) %>%
-  # summarise(summary = length(Stat)) %>%
-  # arrange(desc(summary))
-  spread(Stat, value)
-
+old.data <- read.csv("matchData_2013-2019.csv", stringsAsFactors = F) %>% filter(Year == 2013 | Year == 2014 | Year == 2015) 
 
 df <- doc %>%
   #Remove "\r"
@@ -34,7 +26,8 @@ df <- doc %>%
   mutate(stateFull = ifelse(isState == TRUE, text, NA)) %>%
   ungroup() %>%
   mutate(stateFull = na.locf(stateFull)) %>%
-  left_join(states, by = "stateFull") %>%
+  left_join(states, by = "stateFull")%>%
+  rowwise() %>% mutate(State = stateFinder(stateFull, State))%>%
   filter(!isState) %>%
   select(-isState, -upper, -stateFull) %>%
   #Identify program names and assign as variable to each program
@@ -60,11 +53,11 @@ df <- doc %>%
   mutate(text = gsub("PGY2", "PGY2 ", text)) %>%
   separate(text, sep = "([\\S])+([0-9])([A-z])([0-9]) ", into = c("P", "data"), remove = F) %>%
   separate(data, sep = "[ \t]{2,}", into = c("blank",
+                                             "Quota.2020", "Matched.2020",
                                              "Quota.2019", "Matched.2019",
                                              "Quota.2018", "Matched.2018",
                                              "Quota.2017", "Matched.2017",
-                                             "Quota.2016", "Matched.2016",
-                                             "Quota.2015", "Matched.2015")) %>%
+                                             "Quota.2016", "Matched.2016")) %>%
   #Extracting program number
   rowwise() %>%
   mutate(coord = paste0(str_locate(text, "([\\S])+([0-9])([A-z])([0-9])"), collapse = "-")) %>%
@@ -74,69 +67,19 @@ df <- doc %>%
   #SOAP calculation
   # mutate_if(is.numeric, funs(as.character))
   mutate_if(function(x) all(grepl("^[0-9]*$", x)), funs(as.numeric)) %>%
-  mutate(SOAP.2019 = Quota.2019 - Matched.2019,
+  mutate(SOAP.2020 = Quota.2020 - Matched.2020,
+         SOAP.2019 = Quota.2019 - Matched.2019,
          SOAP.2018 = Quota.2018 - Matched.2018,
          SOAP.2017 = Quota.2017 - Matched.2017,
-         SOAP.2016 = Quota.2016 - Matched.2016,
-         SOAP.2015 = Quota.2015 - Matched.2015) %>%
-  #Add 2013
-  left_join(old.data, by = "Code") %>%
-  #Reshape
-  gather(Stat, value, -State, -Program, -Code, -City, -Specialty) %>%
-  mutate(Stat = factor(Stat), 
-         Stat = recode(Stat, 
-                `2013-Quota` = "Quota.2013",
-                `2013-Matched` = "Matched.2013",
-                `2013-SOAP` = "SOAP.2013",
-                `2014-Quota` = "Quota.2014",
-                `2014-Matched` = "Matched.2014",
-                `2014-SOAP` = "SOAP.2014")) %>%
-  separate(Stat, sep = "\\.", into = c("Stat", "Year"))
+         SOAP.2016 = Quota.2016 - Matched.2016) %>%
+  #Convert to long format
+  pivot_longer(c(-State, -Program, -City, -Specialty, -Code), names_to = "Stat", values_to = "value") %>%
+  separate(Stat, into = c("Stat", "Year"), sep = "\\.")
 
+# Fix Washington DC and Puerto Rico
 df[(is.na(df$State) & (df$City == "Washington")),1] <- "DC"
 df[is.na(df$State),1] <- "PR"
 
-specialty.search <- list("Anesthesiology" = c("anes"),
-                         "Child Neurology" = c("child ne"),
-                         "Dermatology" = c("derm"), 
-                         "Radiology-Diagnostic" = c("diag"), 
-                         "Emergency-Medicine" = c("EM", "emerg"),
-                         "Family Medicine" = c("FM", "family", "fam med"), 
-                         "Internal Medicine" = c("internal", "int med", "medicine-", "medicine - prim", "medicine/ger", "IM ", "med-pri"), 
-                         "Medical Genetics" = c("genetics"), 
-                         "Radiology-Interventional" = c("interven"), 
-                         "Radiology" = c("radiology"),
-                         "Neurological Surgery" = c("neurologi"), 
-                         "Neurology" = c("neurology"), 
-                         "Nuclear Medicine" = c("nuclear"), 
-                         "Obstetrics-Gynecology" = c("gyn"), 
-                         "Orthopaedic Surgery" = c("ortho"),
-                         "Otolaryngology" = c("oto"), 
-                         "Pathology" = c("anat", "path"), 
-                         "Pediatrics" = c("ped"), 
-                         "Physical Medicine and Rehabilitation" = c("PM&R", "rehab"), 
-                         "Plastic Surgery" = c("plast"),
-                         "Preventive Medicine" = c("prevent"), 
-                         "Psychiatry" = c("psych"), 
-                         "Radiation Oncology" = c("onc"), 
-                         "General Surgery" = c("general", "gen sur"), 
-                         "Thoracic Surgery" = c("thorac"), 
-                         "Urology" = c("/urology"), 
-                         "Transitional Year" = c("trans"), 
-                         "Preliminary Year" = c("prelim"), 
-                         "Vascular Surgery" = c("vasc")
-)
+df.final <- specialty.simple(df) %>% mutate(Year = as.numeric(Year)) %>% bind_rows(old.data)
 
-specialties <- names(specialty.search)
-
-specialty.simple <- function(input) {
-  matched.ls <- lapply(specialty.search, function(x) input[grepl(paste(x, collapse="|"), input$Specialty, ignore.case = T), ])
-  names.ls <- lapply(seq_along(matched.ls), function(x) names(matched.ls)[[x]])
-  df.ls <- lapply(seq_along(matched.ls), function(x){
-    data.frame(matched.ls[[x]], "simpleSpecialty" = rep(names.ls[[x]], nrow(matched.ls[[x]])), stringsAsFactors = F)
-  })
-  bind_rows(df.ls)
-}
-df <- specialty.simple(df)
-
-write.csv(df, "matchData.csv", row.names = F)
+write.csv(df.final, "matchData.csv", row.names = F)
