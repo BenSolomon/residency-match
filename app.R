@@ -1,6 +1,6 @@
 library(shiny);library(dplyr);library(tidyr);library(DT); library(ggplot2); library(shinycssloaders)
 
-df <- read.csv("matchData.csv", header=T, stringsAsFactors = F)
+df <- read.csv("matchData.csv", header=T, stringsAsFactors = F) %>% mutate(Stat = ifelse(Stat == "SOAP", "Unmatched", Stat))
 states <- levels(factor(df$State))
 years <- levels(factor(df$Year))
 specialties <- levels(factor(df$simpleSpecialty))
@@ -30,7 +30,7 @@ ui <- navbarPage("Match Data",
                       choices = c("All years", rev(years)),
                       selected = "2020")),
       fluidRow(
-        column(6, align = "center", checkboxInput("SOAP", label = "Only show programs with SOAP positions?", value = FALSE)),
+        column(6, align = "center", checkboxInput("unmatched", label = "Only show unmatched positions?", value = FALSE)),
         column(6, align = "center", downloadButton('downloadData', 'Download filtered data'))
         )
       ),
@@ -79,8 +79,8 @@ server <- function(input, output) {
     if (input$year != "All years") {df <- df %>% filter(Year == input$year)}
     if (input$specialty != "All specialties"){df <- df %>% filter(simpleSpecialty == input$specialty)}
     else {df <- df %>% select(-simpleSpecialty) %>% distinct()}
-    df <- df %>% spread(Stat, value, fill = 0) %>% select(Program, Specialty, Code, State, City, Year, Quota, Matched, SOAP)
-    if (input$SOAP == TRUE) {df <- df %>% filter(SOAP > 0)}
+    df <- df %>% spread(Stat, value, fill = 0) %>% select(Program, Specialty, Code, State, City, Year, Quota, Matched, Unmatched)
+    if (input$unmatched == TRUE) {df <- df %>% filter(Unmatched > 0)}
     df
   })
   
@@ -100,7 +100,7 @@ server <- function(input, output) {
     if (input$state != "All states") {df <- df %>% filter(State == input$state)} 
     if (input$specialty != "All specialties"){df <- df %>% filter(simpleSpecialty == input$specialty)}
     else {df <- df %>% select(-simpleSpecialty) %>% distinct()}
-    df <- df %>% mutate(Stat = factor(Stat, levels=c("Quota", "Matched", "SOAP")))
+    df <- df %>% mutate(Stat = factor(Stat, levels=c("Quota", "Matched", "Unmatched")))
     df
   })
   output$countPlot <- renderPlot({
@@ -120,7 +120,7 @@ server <- function(input, output) {
   
   
   ##PLOT - MATCH RATE OVER TIME##
-  output$rateText <- renderText({paste("Pre-SOAP fill rates for ", input$state, "in", input$year)})
+  output$rateText <- renderText({paste("Fill rates for ", input$state, "in", input$year)})
   data.rate <- reactive({
     if (input$state != "All states") {df <- df %>% filter(State == input$state)} 
     if (input$year != "All years") {df <- df %>% filter(Year == input$year)}
@@ -129,7 +129,7 @@ server <- function(input, output) {
       group_by(simpleSpecialty) %>%
       summarise(Quota = sum(Quota), Matched = sum(Matched)) %>%
       filter(Quota != 0) %>%
-      mutate(PercentMatched = Matched/Quota) %>%
+      mutate(PercentMatched = 100*Matched/Quota) %>%
       arrange(desc(PercentMatched)) %>%
       mutate(simpleSpecialty = factor(simpleSpecialty, levels = simpleSpecialty),
              simpleSpecialty = droplevels(simpleSpecialty))
@@ -140,11 +140,11 @@ server <- function(input, output) {
       ggplot(., aes(x = simpleSpecialty, y = PercentMatched)) +
       geom_bar(stat = "identity") +
       theme_bw() +
-      coord_cartesian(ylim=c(min(.$PercentMatched, na.rm = T), 1.0)) +
+      coord_cartesian(ylim=c(min(.$PercentMatched, na.rm = T), 100)) +
       theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
             axis.text = element_text(size = 12)) +
       labs(x = "",
-           y = "Percentage of matched positions \n prior to SOAP")
+           y = "Percent positions filled")
       }
   })
 }
